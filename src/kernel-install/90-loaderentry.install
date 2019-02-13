@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
 # ex: ts=8 sw=4 sts=4 et filetype=sh
 
@@ -7,66 +7,69 @@ KERNEL_VERSION="$2"
 BOOT_DIR_ABS="$3"
 KERNEL_IMAGE="$4"
 
-if ! [[ $KERNEL_INSTALL_MACHINE_ID ]]; then
-    exit 0
+if ! [ -n "$KERNEL_INSTALL_MACHINE_ID" ]; then
+    if ! [ -f /etc/machine-id ]; then
+        exit 0
+    fi
+    read KERNEL_INSTALL_MACHINE_ID </etc/machine-id
 fi
 
-if ! [[ -d "$BOOT_DIR_ABS" ]]; then
+if ! [ -d "$BOOT_DIR_ABS" ]; then
     exit 0
 fi
 
 MACHINE_ID=$KERNEL_INSTALL_MACHINE_ID
 
 BOOT_DIR="/$MACHINE_ID/$KERNEL_VERSION"
-BOOT_ROOT=${BOOT_DIR_ABS%$BOOT_DIR}
+BOOT_ROOT="${BOOT_DIR_ABS%$BOOT_DIR}"
 
-if [[ $COMMAND == remove ]]; then
+if [ "$COMMAND" = "remove" ]; then
     rm -f "$BOOT_ROOT/loader/entries/$MACHINE_ID-$KERNEL_VERSION.conf"
     rm -f "$BOOT_ROOT/loader/entries/$MACHINE_ID-$KERNEL_VERSION+"*".conf"
     exit 0
 fi
 
-if ! [[ $COMMAND == add ]]; then
+if ! [ "$COMMAND" = "add" ]; then
     exit 1
 fi
 
-if ! [[ $KERNEL_IMAGE ]]; then
+if [ -z "$KERNEL_IMAGE" ]; then
     exit 1
 fi
 
-if [[ -f /etc/os-release ]]; then
+if [ -f /etc/os-release ]; then
     . /etc/os-release
-elif [[ -f /usr/lib/os-release ]]; then
+elif [ -f /usr/lib/os-release ]; then
     . /usr/lib/os-release
 fi
 
-if ! [[ $PRETTY_NAME ]]; then
+if [ -z "$PRETTY_NAME" ]; then
     PRETTY_NAME="Linux $KERNEL_VERSION"
 fi
 
-declare -a BOOT_OPTIONS
-
-if [[ -f /etc/kernel/cmdline ]]; then
-    read -r -d '' -a BOOT_OPTIONS < /etc/kernel/cmdline
+if [ -f /etc/kernel/cmdline ]; then
+    read -r BOOT_OPTIONS < /etc/kernel/cmdline
 fi
 
-if ! [[ ${BOOT_OPTIONS[*]} ]]; then
-    read -r -d '' -a line < /proc/cmdline
-    for i in "${line[@]}"; do
-        [[ "${i#initrd=*}" != "$i" ]] && continue
-        BOOT_OPTIONS+=("$i")
-    done
+if [ -z "${BOOT_OPTIONS}" ] && [ -f "/proc/cmdline" ]; then
+    BOOT_OPTIONS=$(
+        cat /proc/cmdline | tr ' ' '\n' | \
+        while read -r i; do
+            [ "${i#initrd=*}" != "$i" ] && continue
+            echo -n " $i"
+        done
+    )
 fi
 
-if ! [[ ${BOOT_OPTIONS[*]} ]]; then
+if [ -z "${BOOT_OPTIONS}" ]; then
     echo "Could not determine the kernel command line parameters." >&2
     echo "Please specify the kernel command line in /etc/kernel/cmdline!" >&2
     exit 1
 fi
 
-if [[ -f /etc/kernel/tries ]]; then
+if [ -f /etc/kernel/tries ]; then
     read -r TRIES </etc/kernel/tries
-    if ! [[ "$TRIES" =~ ^[0-9]+$ ]] ; then
+    if [ -z "${TRIES##*[!0-9]*}" ] ; then
         echo "/etc/kernel/tries does not contain an integer." >&2
         exit 1
     fi
@@ -91,9 +94,9 @@ mkdir -p "${LOADER_ENTRY%/*}" || {
     echo "title      $PRETTY_NAME"
     echo "version    $KERNEL_VERSION"
     echo "machine-id $MACHINE_ID"
-    echo "options    ${BOOT_OPTIONS[*]}"
+    echo "options    $BOOT_OPTIONS"
     echo "linux      $BOOT_DIR/linux"
-    [[ -f $BOOT_DIR_ABS/initrd ]] && \
+    [ -f $BOOT_DIR_ABS/initrd ] && \
         echo "initrd     $BOOT_DIR/initrd"
     :
 } > "$LOADER_ENTRY" || {
